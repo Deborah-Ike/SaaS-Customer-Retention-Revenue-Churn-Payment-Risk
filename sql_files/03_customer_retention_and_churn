@@ -1,0 +1,132 @@
+/* Overall customer churn */
+SELECT
+    COUNT(*) AS total_subscriptions,
+    SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_subscriptions,
+    CAST(
+        100.0 * SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) / COUNT(*)
+        AS DECIMAL(5,2)
+    ) AS historical_cancellation_rate
+FROM subscriptions;
+
+/* Monthly cancellation activity*/
+SELECT
+    YEAR(ended_at) AS churn_year,
+    MONTH(ended_at) AS churn_month,
+    COUNT(*) AS cancellations
+FROM subscriptions
+WHERE status = 'cancelled'
+GROUP BY YEAR(ended_at), MONTH(ended_at)
+ORDER BY churn_year, churn_month;
+
+/* Churn by plan				*/
+SELECT
+    p.plan_name,
+    COUNT(*) AS total_subscriptions,
+    SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+    CAST(100.0 * SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) / COUNT(*) AS DECIMAL(5,2)) AS cancellation_rate,
+    SUM(CASE WHEN s.status = 'cancelled' THEN s.mrr ELSE 0 END) AS cancelled_mrr
+FROM subscriptions s
+JOIN plans p ON s.plan_id = p.plan_id
+GROUP BY p.plan_name
+ORDER BY cancellation_rate DESC;
+
+/* Churn by segment				*/
+SELECT
+    a.segment,
+    COUNT(*) AS total_subscriptions,
+    SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+    CAST(100.0 * SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) / COUNT(*) AS DECIMAL(5,2)) AS cancellation_rate,
+    SUM(CASE WHEN s.status = 'cancelled' THEN s.mrr ELSE 0 END) AS cancelled_mrr
+FROM subscriptions s
+JOIN accounts a ON s.account_id = a.account_id
+GROUP BY a.segment
+ORDER BY cancellation_rate DESC;
+
+/* Churn by region				*/
+SELECT
+    a.region,
+    COUNT(*) AS total_subscriptions,
+    SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+    CAST(100.0 * SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) / COUNT(*) AS DECIMAL(5,2)) AS cancellation_rate,
+    SUM(CASE WHEN s.status = 'cancelled' THEN s.mrr ELSE 0 END) AS cancelled_mrr
+FROM subscriptions s
+JOIN accounts a ON s.account_id = a.account_id
+GROUP BY a.region
+ORDER BY cancellation_rate DESC;
+
+/* Churn by acquisition channel	*/
+SELECT
+    a.acquisition_channel,
+    COUNT(*) AS total_subscriptions,
+    SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+    CAST(100.0 * SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) / COUNT(*) AS DECIMAL(5,2)) AS cancellation_rate,
+    SUM(CASE WHEN s.status = 'cancelled' THEN s.mrr ELSE 0 END) AS cancelled_mrr
+FROM subscriptions s
+JOIN accounts a ON s.account_id = a.account_id
+GROUP BY a.acquisition_channel
+ORDER BY cancellation_rate DESC;
+
+/* Churn by tenure				*/
+SELECT
+    CASE
+        WHEN DATEDIFF(MONTH, started_at, ended_at) < 3 THEN '0-2 months'
+        WHEN DATEDIFF(MONTH, started_at, ended_at) < 6 THEN '3-5 months'
+        WHEN DATEDIFF(MONTH, started_at, ended_at) < 12 THEN '6-11 months'
+        ELSE '12+ months'
+    END AS tenure_band,
+    COUNT(*) AS cancellations,
+    SUM(mrr) AS cancelled_mrr
+FROM subscriptions
+WHERE status = 'cancelled'
+GROUP BY
+    CASE
+        WHEN DATEDIFF(MONTH, started_at, ended_at) < 3 THEN '0-2 months'
+        WHEN DATEDIFF(MONTH, started_at, ended_at) < 6 THEN '3-5 months'
+        WHEN DATEDIFF(MONTH, started_at, ended_at) < 12 THEN '6-11 months'
+        ELSE '12+ months'
+    END
+ORDER BY cancellations DESC;
+
+/* Churn by seats				*/
+SELECT
+    CASE
+        WHEN seats <= 5 THEN '1-5 seats'
+        WHEN seats <= 20 THEN '6-20 seats'
+        WHEN seats <= 100 THEN '21-100 seats'
+        ELSE '101+ seats'
+    END AS seat_band,
+    COUNT(*) AS total_subscriptions,
+    SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+    CAST(100.0 * SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) / COUNT(*) AS DECIMAL(5,2)) AS cancellation_rate,
+    SUM(CASE WHEN status = 'cancelled' THEN mrr ELSE 0 END) AS cancelled_mrr
+FROM subscriptions
+GROUP BY
+    CASE
+        WHEN seats <= 5 THEN '1-5 seats'
+        WHEN seats <= 20 THEN '6-20 seats'
+        WHEN seats <= 100 THEN '21-100 seats'
+        ELSE '101+ seats'
+    END
+ORDER BY cancellation_rate DESC;
+
+/* Churn by MRR					*/
+SELECT
+    CASE
+        WHEN mrr < 100 THEN 'Under 100'
+        WHEN mrr < 500 THEN '100-499'
+        WHEN mrr < 1000 THEN '500-999'
+        ELSE '1000+'
+    END AS mrr_band,
+    COUNT(*) AS total_subscriptions,
+    SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+    CAST(100.0 * SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) / COUNT(*) AS DECIMAL(5,2)) AS cancellation_rate,
+    SUM(CASE WHEN status = 'cancelled' THEN mrr ELSE 0 END) AS cancelled_mrr
+FROM subscriptions
+GROUP BY
+    CASE
+        WHEN mrr < 100 THEN 'Under 100'
+        WHEN mrr < 500 THEN '100-499'
+        WHEN mrr < 1000 THEN '500-999'
+        ELSE '1000+'
+    END
+ORDER BY cancellation_rate DESC;
