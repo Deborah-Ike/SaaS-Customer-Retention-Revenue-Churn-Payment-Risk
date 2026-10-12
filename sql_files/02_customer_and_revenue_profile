@@ -1,0 +1,82 @@
+/* Customer base size */
+SELECT COUNT(*) AS customer_count
+FROM accounts;
+
+/* Customer distribution by segment */
+SELECT
+    segment,
+    COUNT(*) AS customer_count
+FROM accounts
+GROUP BY segment
+ORDER BY customer_count DESC;
+
+/* Customer distribution by region */
+SELECT
+    region,
+    COUNT(*) AS customer_count
+FROM accounts
+GROUP BY region
+ORDER BY customer_count DESC;
+
+/* Customer distribution by acquisition channel */
+SELECT
+    acquisition_channel,
+    COUNT(*) AS customer_count
+FROM accounts
+GROUP BY acquisition_channel
+ORDER BY customer_count DESC;
+
+/* Subscription distribution by plan */
+SELECT
+    p.plan_name,
+    COUNT(*) AS subscription_count
+FROM subscriptions s
+JOIN plans p
+    ON s.plan_id = p.plan_id
+GROUP BY p.plan_name
+ORDER BY subscription_count DESC;
+
+/* Active subscription count */
+SELECT COUNT(*) AS active_subscriptions
+FROM subscriptions
+WHERE status = 'active';
+
+/* Current MRR */
+SELECT
+    SUM(mrr) AS current_mrr
+FROM subscriptions
+WHERE status = 'active';
+
+/* MRR distribution by plan */
+SELECT
+    p.plan_name,
+    SUM(s.mrr) AS mrr
+FROM subscriptions s
+JOIN plans p
+    ON s.plan_id = p.plan_id
+WHERE s.status = 'active'
+GROUP BY p.plan_name
+ORDER BY mrr DESC;
+
+/* MRR distribution by segment */
+SELECT
+    a.segment,
+    SUM(s.mrr) AS mrr
+FROM subscriptions s
+JOIN accounts a
+    ON s.account_id = a.account_id
+WHERE s.status = 'active'
+GROUP BY a.segment
+ORDER BY mrr DESC;
+
+/* MRR per customer */
+SELECT
+    SUM(mrr) / COUNT(*) AS mrr_per_customer
+FROM subscriptions
+WHERE status = 'active';
+
+/* MRR per seat */
+SELECT
+    SUM(mrr) / SUM(seats) AS mrr_per_seat
+FROM subscriptions
+WHERE status = 'active';
