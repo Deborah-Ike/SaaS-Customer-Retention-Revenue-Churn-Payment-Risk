@@ -1,0 +1,59 @@
+WITH cohorts AS (
+    SELECT
+        DATEFROMPARTS(YEAR(started_at), MONTH(started_at), 1) AS cohort_month,
+        COUNT(*) AS cohort_size
+    FROM subscriptions
+    GROUP BY DATEFROMPARTS(YEAR(started_at), MONTH(started_at), 1)
+),
+milestones AS (
+    SELECT 3 AS months_after_cohort
+    UNION ALL SELECT 6
+    UNION ALL SELECT 12
+),
+retention AS (
+    SELECT
+        c.cohort_month,
+        c.cohort_size,
+        m.months_after_cohort,
+        SUM(
+            CASE
+                WHEN s.ended_at IS NULL
+                  OR s.ended_at >= DATEADD(
+                      MONTH,
+                      m.months_after_cohort + 1,
+                      c.cohort_month
+                  )
+                THEN 1
+                ELSE 0
+            END
+        ) AS retained_customers
+    FROM subscriptions s
+    JOIN cohorts c
+        ON DATEFROMPARTS(YEAR(s.started_at), MONTH(s.started_at), 1)
+         = c.cohort_month
+    CROSS JOIN milestones m
+    WHERE DATEADD(
+        MONTH,
+        m.months_after_cohort,
+        c.cohort_month
+    ) <= '2025-12-01'
+    GROUP BY
+        c.cohort_month,
+        c.cohort_size,
+        m.months_after_cohort
+)
+SELECT
+    cohort_month,
+    MAX(cohort_size) AS cohort_size,
+    MAX(CASE WHEN months_after_cohort = 3
+        THEN CAST(retained_customers * 100.0 / cohort_size AS DECIMAL(5,1))
+    END) AS retention_month_3_pct,
+    MAX(CASE WHEN months_after_cohort = 6
+        THEN CAST(retained_customers * 100.0 / cohort_size AS DECIMAL(5,1))
+    END) AS retention_month_6_pct,
+    MAX(CASE WHEN months_after_cohort = 12
+        THEN CAST(retained_customers * 100.0 / cohort_size AS DECIMAL(5,1))
+    END) AS retention_month_12_pct
+FROM retention
+GROUP BY cohort_month
+ORDER BY cohort_month;
