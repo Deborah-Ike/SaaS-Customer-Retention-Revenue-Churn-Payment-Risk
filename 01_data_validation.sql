@@ -1,0 +1,208 @@
+/* Row Count*/
+SELECT COUNT(*) AS row_count FROM accounts;
+SELECT COUNT(*) AS row_count FROM subscriptions;
+SELECT COUNT(*) AS row_count FROM plans;
+SELECT COUNT(*) AS row_count FROM invoices;
+SELECT COUNT(*) AS row_count FROM payments;
+
+/* Duplicate Keys */
+SELECT account_id, COUNT(*) AS count
+FROM accounts
+GROUP BY account_id
+HAVING COUNT(*) > 1;
+
+SELECT subscription_id, COUNT(*) AS count
+FROM subscriptions
+GROUP BY subscription_id
+HAVING COUNT(*) > 1;
+
+SELECT plan_id, COUNT(*) AS count
+FROM plans
+GROUP BY plan_id
+HAVING COUNT(*) > 1;
+
+SELECT invoice_id, COUNT(*) AS count
+FROM invoices
+GROUP BY invoice_id
+HAVING COUNT(*) > 1;
+
+SELECT payment_id, COUNT(*) AS count
+FROM payments
+GROUP BY payment_id
+HAVING COUNT(*) > 1;
+
+/* Null Values */
+SELECT
+    SUM(CASE WHEN account_id IS NULL THEN 1 ELSE 0 END) AS account_id_nulls,
+    SUM(CASE WHEN created_at IS NULL THEN 1 ELSE 0 END) AS created_at_nulls,
+    SUM(CASE WHEN region IS NULL THEN 1 ELSE 0 END) AS region_nulls,
+    SUM(CASE WHEN segment IS NULL THEN 1 ELSE 0 END) AS segment_nulls,
+    SUM(CASE WHEN acquisition_channel IS NULL THEN 1 ELSE 0 END) AS channel_nulls
+FROM accounts;
+
+SELECT
+    SUM(CASE WHEN subscription_id IS NULL THEN 1 ELSE 0 END) AS subscription_id_nulls,
+    SUM(CASE WHEN account_id IS NULL THEN 1 ELSE 0 END) AS account_id_nulls,
+    SUM(CASE WHEN plan_id IS NULL THEN 1 ELSE 0 END) AS plan_id_nulls,
+    SUM(CASE WHEN started_at IS NULL THEN 1 ELSE 0 END) AS started_at_nulls,
+    SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) AS ended_at_nulls,
+    SUM(CASE WHEN status IS NULL THEN 1 ELSE 0 END) AS status_nulls,
+    SUM(CASE WHEN seats IS NULL THEN 1 ELSE 0 END) AS seats_nulls,
+    SUM(CASE WHEN mrr IS NULL THEN 1 ELSE 0 END) AS mrr_nulls
+FROM subscriptions;
+
+SELECT
+    SUM(CASE WHEN plan_id IS NULL THEN 1 ELSE 0 END) AS plan_id_nulls,
+    SUM(CASE WHEN plan_name IS NULL THEN 1 ELSE 0 END) AS plan_name_nulls,
+    SUM(CASE WHEN monthly_price IS NULL THEN 1 ELSE 0 END) AS price_nulls,
+    SUM(CASE WHEN included_seats IS NULL THEN 1 ELSE 0 END) AS seats_nulls
+FROM plans;
+
+SELECT
+    SUM(CASE WHEN invoice_id IS NULL THEN 1 ELSE 0 END) AS invoice_id_nulls,
+    SUM(CASE WHEN subscription_id IS NULL THEN 1 ELSE 0 END) AS subscription_id_nulls,
+    SUM(CASE WHEN invoice_date IS NULL THEN 1 ELSE 0 END) AS invoice_date_nulls,
+    SUM(CASE WHEN due_date IS NULL THEN 1 ELSE 0 END) AS due_date_nulls,
+    SUM(CASE WHEN amount_due IS NULL THEN 1 ELSE 0 END) AS amount_due_nulls,
+    SUM(CASE WHEN invoice_status IS NULL THEN 1 ELSE 0 END) AS status_nulls
+FROM invoices;
+
+SELECT
+    SUM(CASE WHEN payment_id IS NULL THEN 1 ELSE 0 END) AS payment_id_nulls,
+    SUM(CASE WHEN invoice_id IS NULL THEN 1 ELSE 0 END) AS invoice_id_nulls,
+    SUM(CASE WHEN attempted_at IS NULL THEN 1 ELSE 0 END) AS attempted_at_nulls,
+    SUM(CASE WHEN payment_status IS NULL THEN 1 ELSE 0 END) AS status_nulls,
+    SUM(CASE WHEN amount IS NULL THEN 1 ELSE 0 END) AS amount_nulls
+FROM payments;
+
+/* Data types */
+SELECT
+    TABLE_NAME,
+    COLUMN_NAME,
+    DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME IN (
+    'accounts',
+    'subscriptions',
+    'plans',
+    'invoices',
+    'payments'
+)
+ORDER BY TABLE_NAME, ORDINAL_POSITION;
+
+/* Fix Incorrect Data Types */
+ALTER TABLE invoices
+ALTER COLUMN amount_due DECIMAL(10,2);
+
+ALTER TABLE payments
+ALTER COLUMN amount DECIMAL(10,2);
+
+ALTER TABLE plans
+ALTER COLUMN monthly_price DECIMAL(10,2);
+
+ALTER TABLE subscriptions
+ALTER COLUMN ended_at DATETIME2;
+
+ALTER TABLE subscriptions
+ALTER COLUMN seats INT;
+
+ALTER TABLE subscriptions
+ALTER COLUMN mrr DECIMAL(10,2);
+
+/* Date ranges */
+SELECT
+    MIN(created_at) AS earliest_date,
+    MAX(created_at) AS latest_date
+FROM accounts;
+
+SELECT
+    MIN(started_at) AS earliest_start,
+    MAX(started_at) AS latest_start,
+    MIN(ended_at) AS earliest_end,
+    MAX(ended_at) AS latest_end
+FROM subscriptions;
+
+SELECT
+    MIN(invoice_date) AS earliest_invoice,
+    MAX(invoice_date) AS latest_invoice
+FROM invoices;
+
+SELECT
+    MIN(attempted_at) AS earliest_payment,
+    MAX(attempted_at) AS latest_payment
+FROM payments;
+
+/* Invalid dates */
+SELECT *
+FROM subscriptions
+WHERE ended_at < started_at;
+
+SELECT *
+FROM invoices
+WHERE due_date < invoice_date;
+
+SELECT p.*
+FROM payments p
+JOIN invoices i
+    ON p.invoice_id = i.invoice_id
+WHERE p.attempted_at < i.invoice_date;
+
+SELECT *
+FROM subscriptions
+WHERE started_at < '2023-01-01'
+   OR started_at > '2025-12-31';
+
+/*Invalid Monetary Values */
+SELECT *
+FROM plans
+WHERE monthly_price <= 0;
+
+SELECT *
+FROM subscriptions
+WHERE mrr <= 0;
+
+SELECT *
+FROM invoices
+WHERE amount_due <= 0;
+
+SELECT *
+FROM payments
+WHERE amount <= 0;
+
+/* Invalid statuses */
+SELECT status, COUNT(*) AS count
+FROM subscriptions
+GROUP BY status;
+
+SELECT invoice_status, COUNT(*) AS count
+FROM invoices
+GROUP BY invoice_status;
+
+SELECT payment_status, COUNT(*) AS count
+FROM payments
+GROUP BY payment_status;
+
+/* Foreign keys actually exist in the parent tables */
+SELECT s.*
+FROM subscriptions s
+LEFT JOIN accounts a
+    ON s.account_id = a.account_id
+WHERE a.account_id IS NULL;
+
+SELECT s.*
+FROM subscriptions s
+LEFT JOIN plans p
+    ON s.plan_id = p.plan_id
+WHERE p.plan_id IS NULL;
+
+SELECT i.*
+FROM invoices i
+LEFT JOIN subscriptions s
+    ON i.subscription_id = s.subscription_id
+WHERE s.subscription_id IS NULL;
+
+SELECT p.*
+FROM payments p
+LEFT JOIN invoices i
+    ON p.invoice_id = i.invoice_id
+WHERE i.invoice_id IS NULL;
