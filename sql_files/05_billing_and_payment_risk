@@ -1,0 +1,182 @@
+/* Invoice volume & Status			 */
+SELECT
+    invoice_status,
+    COUNT(*) AS invoice_count,
+    SUM(amount_due) AS total_amount
+FROM invoices
+GROUP BY invoice_status
+ORDER BY invoice_count DESC;
+
+/* Payment attempts				 */
+SELECT
+    payment_status,
+    COUNT(*) AS attempts,
+    SUM(amount) AS total_amount
+FROM payments
+GROUP BY payment_status;
+
+/* Payment success and failure rates				 */
+SELECT
+    COUNT(*) AS total_attempts,
+    SUM(CASE WHEN payment_status = 'succeeded' THEN 1 ELSE 0 END) AS successful_attempts,
+    SUM(CASE WHEN payment_status = 'failed' THEN 1 ELSE 0 END) AS failed_attempts,
+    100.0 * SUM(CASE WHEN payment_status = 'succeeded' THEN 1 ELSE 0 END) / COUNT(*) AS success_rate,
+    100.0 * SUM(CASE WHEN payment_status = 'failed' THEN 1 ELSE 0 END) / COUNT(*) AS failure_rate
+FROM payments;
+
+/* Attempts per invoice	 */
+/**** how many attempts each invoice received ****/
+SELECT
+    COUNT(*) AS invoice_count,
+    AVG(attempt_count * 1.0) AS avg_attempts
+FROM (
+    SELECT
+        invoice_id,
+        COUNT(*) AS attempt_count
+    FROM payments
+    GROUP BY invoice_id
+) p;
+
+/****** To see the distribution of attempts per invoice: ***/
+SELECT
+    attempt_count,
+    COUNT(*) AS invoice_count
+FROM (
+    SELECT
+        invoice_id,
+        COUNT(*) AS attempt_count
+    FROM payments
+    GROUP BY invoice_id
+) p
+GROUP BY attempt_count
+ORDER BY attempt_count;
+
+/* Recovery after a failed payment		 */
+WITH invoice_payments AS (
+    SELECT
+        invoice_id,
+        MAX(CASE WHEN payment_status = 'failed' THEN 1 ELSE 0 END) AS had_failure,
+        MAX(CASE WHEN payment_status = 'succeeded' THEN 1 ELSE 0 END) AS had_success
+    FROM payments
+    GROUP BY invoice_id
+)
+SELECT
+    COUNT(CASE WHEN had_failure = 1 THEN 1 END) AS invoices_with_failure,
+    COUNT(CASE WHEN had_failure = 1 AND had_success = 1 THEN 1 END) AS recovered_invoices,
+    100.0 * COUNT(CASE WHEN had_failure = 1 AND had_success = 1 THEN 1 END)
+        / NULLIF(COUNT(CASE WHEN had_failure = 1 THEN 1 END), 0) AS recovery_rate
+FROM invoice_payments;
+
+/* Payment failure by plan			 */
+SELECT
+    pl.plan_name,
+    COUNT(*) AS total_attempts,
+    SUM(CASE WHEN p.payment_status = 'failed' THEN 1 ELSE 0 END) AS failed_attempts,
+    100.0 * SUM(CASE WHEN p.payment_status = 'failed' THEN 1 ELSE 0 END) / COUNT(*) AS failure_rate
+FROM payments p
+JOIN invoices i ON p.invoice_id = i.invoice_id
+JOIN subscriptions s ON i.subscription_id = s.subscription_id
+JOIN plans pl ON s.plan_id = pl.plan_id
+GROUP BY pl.plan_name
+ORDER BY failure_rate DESC;
+
+/* Payment failure by customer segment			 */
+SELECT
+    a.segment,
+    COUNT(*) AS total_attempts,
+    SUM(CASE WHEN p.payment_status = 'failed' THEN 1 ELSE 0 END) AS failed_attempts,
+    100.0 * SUM(CASE WHEN p.payment_status = 'failed' THEN 1 ELSE 0 END) / COUNT(*) AS failure_rate
+FROM payments p
+JOIN invoices i ON p.invoice_id = i.invoice_id
+JOIN subscriptions s ON i.subscription_id = s.subscription_id
+JOIN accounts a ON s.account_id = a.account_id
+GROUP BY a.segment
+ORDER BY failure_rate DESC;
+
+/* Payment failure by region */
+SELECT
+    a.region,
+    COUNT(*) AS total_attempts,
+    SUM(CASE WHEN p.payment_status = 'failed' THEN 1 ELSE 0 END) AS failed_attempts,
+    100.0 * SUM(CASE WHEN p.payment_status = 'failed' THEN 1 ELSE 0 END) / COUNT(*) AS failure_rate
+FROM payments p
+JOIN invoices i ON p.invoice_id = i.invoice_id
+JOIN subscriptions s ON i.subscription_id = s.subscription_id
+JOIN accounts a ON s.account_id = a.account_id
+GROUP BY a.region
+ORDER BY failure_rate DESC;
+
+/* Cancellation rates among customers with payment problems */
+WITH payment_issues AS (
+    SELECT DISTINCT i.subscription_id
+    FROM invoices i
+    JOIN payments p ON i.invoice_id = p.invoice_id
+    WHERE p.payment_status = 'failed'
+)
+SELECT
+    CASE
+        WHEN pi.subscription_id IS NOT NULL THEN 'Payment problem'
+        ELSE 'No payment problem'
+    END AS payment_group,
+    COUNT(*) AS total_subscriptions,
+    SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_subscriptions,
+    100.0 * SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) / COUNT(*) AS cancellation_rate
+FROM subscriptions s
+LEFT JOIN payment_issues pi ON s.subscription_id = pi.subscription_id
+GROUP BY
+    CASE
+        WHEN pi.subscription_id IS NOT NULL THEN 'Payment problem'
+        ELSE 'No payment problem'
+    END;
+
+/* Payment problems and cancelled MRR */
+SELECT
+    SUM(s.mrr) AS cancelled_mrr_with_payment_failure
+FROM subscriptions s
+WHERE s.status = 'cancelled'
+AND EXISTS (
+    SELECT 1
+    FROM invoices i
+    JOIN payments p ON i.invoice_id = p.invoice_id
+    WHERE i.subscription_id = s.subscription_id
+      AND p.payment_status = 'failed'
+);
+
+/* Did payment failures happen before cancellation */
+WITH payment_timing AS (
+    SELECT
+        s.subscription_id,
+        s.status,
+        s.ended_at,
+        MIN(CASE
+            WHEN p.payment_status = 'failed' THEN p.attempted_at
+        END) AS first_failed_payment
+    FROM subscriptions s
+    LEFT JOIN invoices i ON s.subscription_id = i.subscription_id
+    LEFT JOIN payments p ON i.invoice_id = p.invoice_id
+    GROUP BY s.subscription_id, s.status, s.ended_at
+)
+SELECT
+    CASE
+        WHEN first_failed_payment IS NULL THEN 'No failed payment'
+        WHEN status = 'cancelled'
+             AND first_failed_payment < ended_at THEN 'Failure before cancellation'
+        WHEN status = 'cancelled'
+             AND first_failed_payment >= ended_at THEN 'Failure after cancellation'
+        ELSE 'Failure on active subscription'
+    END AS payment_timing_group,
+    COUNT(*) AS subscriptions,
+    SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_subscriptions,
+    100.0 * SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END)
+        / COUNT(*) AS cancellation_rate
+FROM payment_timing
+GROUP BY
+    CASE
+        WHEN first_failed_payment IS NULL THEN 'No failed payment'
+        WHEN status = 'cancelled'
+             AND first_failed_payment < ended_at THEN 'Failure before cancellation'
+        WHEN status = 'cancelled'
+             AND first_failed_payment >= ended_at THEN 'Failure after cancellation'
+        ELSE 'Failure on active subscription'
+    END
+ORDER BY cancellation_rate DESC;
