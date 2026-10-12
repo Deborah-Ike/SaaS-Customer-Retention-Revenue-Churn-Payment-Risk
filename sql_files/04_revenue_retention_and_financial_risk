@@ -1,0 +1,164 @@
+/* Current MRR						  */
+SELECT
+    SUM(mrr) AS current_mrr
+FROM subscriptions
+WHERE status = 'active';
+
+/* MRR over time					  */
+SELECT
+    YEAR(d.month_end) AS [year],
+    MONTH(d.month_end) AS [month],
+    SUM(s.mrr) AS mrr
+FROM (
+    SELECT EOMONTH(DATEADD(MONTH, n, '2023-01-01')) AS month_end
+    FROM (
+        SELECT TOP (36) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
+        FROM sys.all_objects
+    ) x
+) d
+JOIN subscriptions s
+    ON s.started_at <= d.month_end
+    AND (s.ended_at IS NULL OR s.ended_at > d.month_end)
+GROUP BY YEAR(d.month_end), MONTH(d.month_end)
+ORDER BY [year], [month];
+
+/* MRR by plan						  */
+SELECT
+    p.plan_name,
+    SUM(s.mrr) AS current_mrr
+FROM subscriptions s
+JOIN plans p ON s.plan_id = p.plan_id
+WHERE s.status = 'active'
+GROUP BY p.plan_name
+ORDER BY current_mrr DESC;
+
+/* MRR by segment					  */
+SELECT
+    a.segment,
+    SUM(s.mrr) AS current_mrr
+FROM subscriptions s
+JOIN accounts a ON s.account_id = a.account_id
+WHERE s.status = 'active'
+GROUP BY a.segment
+ORDER BY current_mrr DESC;
+
+/* MRR by region					  */
+SELECT
+    a.region,
+    SUM(s.mrr) AS current_mrr
+FROM subscriptions s
+JOIN accounts a ON s.account_id = a.account_id
+WHERE s.status = 'active'
+GROUP BY a.region
+ORDER BY current_mrr DESC;
+
+/* MRR by acquisition channel		  */
+SELECT
+    a.acquisition_channel,
+    SUM(s.mrr) AS current_mrr
+FROM subscriptions s
+JOIN accounts a ON s.account_id = a.account_id
+WHERE s.status = 'active'
+GROUP BY a.acquisition_channel
+ORDER BY current_mrr DESC;
+
+/* MRR lost from cancellations		  */
+/*** Total cancelled MRR ***/
+SELECT
+    SUM(mrr) AS cancelled_mrr
+FROM subscriptions
+WHERE status = 'cancelled';
+
+/*** Cancelled MRR over time ***/
+SELECT
+    YEAR(ended_at) AS [year],
+    MONTH(ended_at) AS [month],
+    COUNT(*) AS cancellations,
+    SUM(mrr) AS cancelled_mrr
+FROM subscriptions
+WHERE status = 'cancelled'
+GROUP BY YEAR(ended_at), MONTH(ended_at)
+ORDER BY [year], [month];
+
+/* Revenue at risk					  */
+SELECT
+    SUM(s.mrr) AS mrr_associated_with_payment_risk
+FROM subscriptions s
+WHERE s.status = 'active'
+AND EXISTS (
+    SELECT 1
+    FROM invoices i
+    JOIN payments p ON p.invoice_id = i.invoice_id
+    WHERE i.subscription_id = s.subscription_id
+      AND p.payment_status = 'failed'
+);
+
+/* Revenue concentration			  */
+/***** This identifies the 10 active customers contributing the most MRR *****/
+SELECT TOP 10
+    a.account_id,
+    a.segment,
+    s.mrr
+FROM accounts a
+JOIN subscriptions s
+    ON a.account_id = s.account_id
+WHERE s.status = 'active'
+ORDER BY s.mrr DESC;
+
+/****** To measure how much of total MRR these customers contribute *****/
+WITH top_customers AS (
+    SELECT TOP 10 mrr
+    FROM subscriptions
+    WHERE status = 'active'
+    ORDER BY mrr DESC
+)
+SELECT
+    SUM(mrr) AS top_10_mrr,
+    100.0 * SUM(mrr) / (
+        SELECT SUM(mrr)
+        FROM subscriptions
+        WHERE status = 'active'
+    ) AS top_10_mrr_share
+FROM top_customers;
+
+/* Customer churn versus revenue churn*/
+WITH months AS (
+    SELECT DATEADD(MONTH, n, '2023-01-01') AS month_start
+    FROM (
+        SELECT TOP 36
+            ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
+        FROM sys.all_objects
+    ) x
+)
+SELECT
+    YEAR(m.month_start) AS [year],
+    MONTH(m.month_start) AS [month],
+
+    COUNT(CASE
+        WHEN s.started_at < m.month_start
+         AND (s.ended_at IS NULL OR s.ended_at >= m.month_start)
+        THEN 1
+    END) AS customers_at_start,
+
+    COUNT(CASE
+        WHEN s.ended_at >= m.month_start
+         AND s.ended_at < DATEADD(MONTH, 1, m.month_start)
+        THEN 1
+    END) AS cancellations,
+
+    SUM(CASE
+        WHEN s.started_at < m.month_start
+         AND (s.ended_at IS NULL OR s.ended_at >= m.month_start)
+        THEN s.mrr ELSE 0
+    END) AS mrr_at_start,
+
+    SUM(CASE
+        WHEN s.ended_at >= m.month_start
+         AND s.ended_at < DATEADD(MONTH, 1, m.month_start)
+        THEN s.mrr ELSE 0
+    END) AS lost_mrr
+
+FROM months m
+CROSS JOIN subscriptions s
+GROUP BY m.month_start
+ORDER BY [year], [month];
