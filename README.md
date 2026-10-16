@@ -85,10 +85,14 @@ SQL Server and T-SQL were used to validate data types, join relational tables, a
 
 The analysis was organized into separate SQL files for data validation, customer profiling, churn, revenue retention, cohort analysis, payment risk, and business findings.
 
-Power BI will be used to present the verified metrics in an interactive dashboard for business stakeholders.
+Created a single-page interactive Power BI dashboard highlighting key customer, revenue, churn, cohort retention, and payment risk metrics to support business decision-making.
 
 ## Conclusion
 
 The analysis shows that the SaaS business has a substantial active subscription base and $1.39 million in current MRR, while historical cancellations account for $342,673 in cancelled MRR. Cancellation rates and cancelled revenue vary across plans, customer segments, and acquisition channels. Payment failures are frequent enough to monitor, although most invoices with failed attempts eventually show a successful attempt in the dataset.
 
 The recommended next step is to investigate the recent MRR decline and prioritize retention analysis using both cancellation rates and financial impact. These findings provide a basis for further investigation, rather than proof of the causes of churn.
+
+## Dataset Credit
+
+Analytics Engineering. (2026). SaaS Subscriptions & Customer Churn Dataset (Version 1.0.0) [Data set]. https://www.analyticsengineering.com/datasets/saas-subscriptions. Licensed under CC BY 4.0.
